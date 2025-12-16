@@ -8,7 +8,7 @@ A real-time blockchain indexer for WMON (Wrapped MON) token transfers on Monad m
 
 ## 🚀 Live Demo
 
-**[View Live Dashboard →](https://your-app.railway.app)** *(Update after deploying)*
+**[View Live Dashboard →](https://wmon-indexer-production.up.railway.app/)**
 
 ---
 
