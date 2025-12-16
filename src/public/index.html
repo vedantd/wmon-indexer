@@ -1,0 +1,772 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WMON Holder Bubble Map</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+      color: #fff;
+      min-height: 100vh;
+      padding: 20px;
+    }
+
+    .header {
+      text-align: center;
+      margin-bottom: 30px;
+    }
+
+    .header h1 {
+      font-size: 2.5rem;
+      background: linear-gradient(90deg, #00d9ff, #00ff88);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      margin-bottom: 10px;
+    }
+
+    .header p {
+      color: #888;
+      font-size: 0.9rem;
+    }
+
+    .stats-bar {
+      display: flex;
+      justify-content: center;
+      gap: 40px;
+      margin-bottom: 30px;
+      flex-wrap: wrap;
+    }
+
+    .stat {
+      text-align: center;
+      background: rgba(255,255,255,0.05);
+      padding: 15px 25px;
+      border-radius: 12px;
+      border: 1px solid rgba(255,255,255,0.1);
+    }
+
+    .stat-value {
+      font-size: 1.8rem;
+      font-weight: bold;
+      color: #00d9ff;
+    }
+
+    .stat-label {
+      font-size: 0.8rem;
+      color: #888;
+      margin-top: 5px;
+    }
+
+    .container {
+      display: flex;
+      gap: 20px;
+      max-width: 1400px;
+      margin: 0 auto;
+    }
+
+    .bubble-map {
+      flex: 2;
+      background: rgba(255,255,255,0.03);
+      border-radius: 16px;
+      padding: 20px;
+      min-height: 500px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .bubble-map h2 {
+      margin-bottom: 20px;
+      font-size: 1.2rem;
+      color: #00ff88;
+    }
+
+    .bubbles {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 15px;
+      justify-content: center;
+      align-items: center;
+      padding: 20px;
+    }
+
+    .bubble {
+      border-radius: 50%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      cursor: pointer;
+      transition: transform 0.3s, box-shadow 0.3s;
+      padding: 10px;
+    }
+
+    .bubble:hover {
+      transform: scale(1.1);
+      box-shadow: 0 0 30px rgba(0, 217, 255, 0.5);
+    }
+
+    .bubble-address {
+      font-size: 0.65rem;
+      opacity: 0.8;
+      word-break: break-all;
+    }
+
+    .bubble-balance {
+      font-size: 0.75rem;
+      font-weight: bold;
+      margin-top: 3px;
+    }
+
+    .transfers-panel {
+      flex: 1;
+      background: rgba(255,255,255,0.03);
+      border-radius: 16px;
+      padding: 20px;
+      max-height: 600px;
+      overflow-y: auto;
+    }
+
+    .transfers-panel h2 {
+      margin-bottom: 15px;
+      font-size: 1.2rem;
+      color: #00ff88;
+    }
+
+    .transfer {
+      background: rgba(255,255,255,0.05);
+      border-radius: 8px;
+      padding: 12px;
+      margin-bottom: 10px;
+      font-size: 0.8rem;
+      border-left: 3px solid #00d9ff;
+    }
+
+    .transfer.multi {
+      border-left-color: #ff6b6b;
+    }
+
+    .transfer-addresses {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 5px;
+    }
+
+    .transfer-arrow {
+      color: #00ff88;
+    }
+
+    .transfer-value {
+      color: #00d9ff;
+      font-weight: bold;
+    }
+
+    .transfer-meta {
+      color: #666;
+      font-size: 0.7rem;
+    }
+
+    .live-indicator {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: rgba(0, 255, 136, 0.1);
+      padding: 5px 12px;
+      border-radius: 20px;
+      font-size: 0.8rem;
+      color: #00ff88;
+    }
+
+    .live-dot {
+      width: 8px;
+      height: 8px;
+      background: #00ff88;
+      border-radius: 50%;
+      animation: pulse 1.5s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.3; }
+    }
+
+    @keyframes flash {
+      0% { color: #00ff88; transform: scale(1.1); }
+      100% { color: #00d9ff; transform: scale(1); }
+    }
+
+    .transfer.new {
+      animation: slideIn 0.3s ease-out;
+      background: rgba(0, 255, 136, 0.1);
+    }
+
+    @keyframes slideIn {
+      from { 
+        opacity: 0; 
+        transform: translateX(-20px);
+      }
+      to { 
+        opacity: 1; 
+        transform: translateX(0);
+      }
+    }
+
+    .transfers-panel {
+      border: 2px solid transparent;
+      transition: border-color 0.3s;
+    }
+
+    .bubble {
+      transition: all 0.3s ease;
+    }
+
+    .loading {
+      text-align: center;
+      padding: 50px;
+      color: #888;
+    }
+
+    .address {
+      font-family: monospace;
+      color: #aaa;
+    }
+
+    /* Tooltips */
+    .stat {
+      position: relative;
+      cursor: help;
+    }
+
+    .tooltip {
+      visibility: hidden;
+      position: absolute;
+      bottom: 100%;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(0, 0, 0, 0.9);
+      color: #fff;
+      padding: 10px 14px;
+      border-radius: 8px;
+      font-size: 0.75rem;
+      width: 220px;
+      text-align: left;
+      z-index: 100;
+      opacity: 0;
+      transition: opacity 0.2s, visibility 0.2s;
+      margin-bottom: 10px;
+      line-height: 1.4;
+    }
+
+    .tooltip::after {
+      content: '';
+      position: absolute;
+      top: 100%;
+      left: 50%;
+      transform: translateX(-50%);
+      border: 8px solid transparent;
+      border-top-color: rgba(0, 0, 0, 0.9);
+    }
+
+    .stat:hover .tooltip {
+      visibility: visible;
+      opacity: 1;
+    }
+
+    /* About Section */
+    .about-section {
+      max-width: 1400px;
+      margin: 40px auto 20px;
+      background: rgba(255,255,255,0.03);
+      border-radius: 16px;
+      padding: 25px 30px;
+      border: 1px solid rgba(255,255,255,0.1);
+    }
+
+    .about-section h2 {
+      color: #00ff88;
+      font-size: 1.3rem;
+      margin-bottom: 15px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .about-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 20px;
+    }
+
+    .about-card {
+      background: rgba(255,255,255,0.05);
+      border-radius: 12px;
+      padding: 18px;
+      border-left: 3px solid #00d9ff;
+    }
+
+    .about-card h3 {
+      color: #00d9ff;
+      font-size: 1rem;
+      margin-bottom: 8px;
+    }
+
+    .about-card p {
+      color: #aaa;
+      font-size: 0.85rem;
+      line-height: 1.5;
+    }
+
+    .about-card code {
+      background: rgba(0,217,255,0.2);
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 0.8rem;
+      color: #00d9ff;
+    }
+
+    .tech-stack {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 15px;
+    }
+
+    .tech-tag {
+      background: rgba(0, 255, 136, 0.15);
+      color: #00ff88;
+      padding: 5px 12px;
+      border-radius: 20px;
+      font-size: 0.75rem;
+    }
+
+    .interview-highlight {
+      background: linear-gradient(135deg, rgba(255, 107, 107, 0.1), rgba(255, 193, 7, 0.1));
+      border-left-color: #ff6b6b !important;
+    }
+
+    .interview-highlight h3 {
+      color: #ff6b6b;
+    }
+
+    /* System Design Thumbnail */
+    .sd-thumbnail {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      z-index: 1000;
+      cursor: pointer;
+      transition: transform 0.3s;
+    }
+
+    .sd-thumbnail img {
+      width: 140px;
+      border-radius: 8px;
+      border: 2px solid #00d9ff;
+      box-shadow: 0 0 20px rgba(0, 217, 255, 0.6);
+      animation: glow 2s ease-in-out infinite;
+    }
+
+    @keyframes glow {
+      0%, 100% { 
+        box-shadow: 0 0 15px rgba(0, 217, 255, 0.5), 0 0 30px rgba(0, 217, 255, 0.3);
+        border-color: #00d9ff;
+      }
+      50% { 
+        box-shadow: 0 0 25px rgba(0, 255, 136, 0.7), 0 0 50px rgba(0, 255, 136, 0.4);
+        border-color: #00ff88;
+      }
+    }
+
+    .sd-thumbnail:hover {
+      transform: scale(1.08);
+    }
+
+    .sd-thumbnail:hover img {
+      animation: none;
+      border-color: #00ff88;
+      box-shadow: 0 0 30px rgba(0, 255, 136, 0.8);
+    }
+
+    .sd-label {
+      text-align: center;
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: #00d9ff;
+      margin-top: 8px;
+      animation: labelPulse 2s ease-in-out infinite;
+    }
+
+    @keyframes labelPulse {
+      0%, 100% { color: #00d9ff; }
+      50% { color: #00ff88; }
+    }
+
+    /* Modal for expanded diagram */
+    .sd-modal {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.9);
+      z-index: 2000;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+    }
+
+    .sd-modal.active {
+      display: flex;
+    }
+
+    .sd-modal img {
+      max-width: 90%;
+      max-height: 90%;
+      border-radius: 12px;
+      box-shadow: 0 8px 40px rgba(0, 0, 0, 0.5);
+    }
+
+    .sd-modal-close {
+      position: absolute;
+      top: 20px;
+      right: 30px;
+      color: #fff;
+      font-size: 2rem;
+      cursor: pointer;
+      opacity: 0.7;
+      transition: opacity 0.2s;
+    }
+
+    .sd-modal-close:hover {
+      opacity: 1;
+    }
+  </style>
+</head>
+<body>
+  <!-- Floating System Design Thumbnail -->
+  <div class="sd-thumbnail" onclick="openDiagram()">
+    <img src="/sd.png" alt="System Design">
+    <div class="sd-label">🏗️ System Design</div>
+    <div style="text-align: center; font-size: 0.7rem; color: #888; margin-top: 3px;">👆 Click to expand</div>
+  </div>
+
+  <!-- Modal for expanded diagram -->
+  <div class="sd-modal" id="sdModal" onclick="closeDiagram()">
+    <span class="sd-modal-close">&times;</span>
+    <img src="/sd.png" alt="System Design Diagram">
+  </div>
+
+  <div class="header">
+    <h1>🫧 WMON Bubble Map</h1>
+    <p>Live visualization of WMON token holders on Monad</p>
+    <div style="margin-top: 15px;">
+      <span class="live-indicator">
+        <span class="live-dot"></span>
+        🔴 LIVE STREAM - Real-time WebSocket
+      </span>
+    </div>
+  </div>
+
+  <div class="stats-bar" id="stats">
+    <div class="stat">
+      <div class="tooltip">
+        <strong>Unique Holders</strong><br>
+        Number of unique wallet addresses that have received WMON tokens in this session.
+      </div>
+      <div class="stat-value" id="stat-holders">-</div>
+      <div class="stat-label">Unique Holders</div>
+    </div>
+    <div class="stat">
+      <div class="tooltip">
+        <strong>Total Transfers (DB)</strong><br>
+        All transfer events persisted to the Supabase database across all sessions.
+      </div>
+      <div class="stat-value" id="stat-transfers">-</div>
+      <div class="stat-label">Total Transfers (DB)</div>
+    </div>
+    <div class="stat">
+      <div class="tooltip">
+        <strong>Multi-Transfer TXs</strong><br>
+        Transactions containing 2 or more Transfer events. Common in DEX swaps, batch transfers, and router contracts.
+      </div>
+      <div class="stat-value" id="stat-multi">-</div>
+      <div class="stat-label">Multi-Transfer TXs</div>
+    </div>
+    <div class="stat">
+      <div class="tooltip">
+        <strong>Max Transfers in One TX</strong><br>
+        The highest number of ERC-20 Transfer events seen in a single transaction. This demonstrates grouping events by <code>transactionHash</code> and ordering by <code>logIndex</code>.
+      </div>
+      <div class="stat-value" id="stat-max">-</div>
+      <div class="stat-label">Max in One TX</div>
+    </div>
+  </div>
+
+  <div class="container">
+    <div class="bubble-map">
+      <h2>📊 Top Holders by Balance</h2>
+      <div class="bubbles" id="bubbles">
+        <div class="loading">Loading holders...</div>
+      </div>
+    </div>
+
+    <div class="transfers-panel">
+      <h2>📜 Recent Transfers</h2>
+      <div id="transfers">
+        <div class="loading">Loading transfers...</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Story Section -->
+  <div class="about-section" style="margin-bottom: 20px; background: linear-gradient(135deg, rgba(0,217,255,0.05), rgba(0,255,136,0.05));">
+    <h2>💬 The Story</h2>
+    <p style="color: #ccc; line-height: 1.7; font-size: 0.95rem;">
+      Got asked in an interview: <em>"How do you handle multiple ERC-20 transfers in one transaction?"</em> 
+      Didn't have a great answer — so I built this. Groups transfers by <code style="background: rgba(0,217,255,0.2); padding: 2px 6px; border-radius: 4px; color: #00d9ff;">transactionHash</code>, 
+      orders by <code style="background: rgba(0,217,255,0.2); padding: 2px 6px; border-radius: 4px; color: #00d9ff;">logIndex</code>, 
+      streams live via WebSocket. Saw one tx with 8 transfers in it. Now I get it.
+    </p>
+  </div>
+
+  <!-- System Design Diagram (Full Size) -->
+  <div class="about-section">
+    <h2>🏗️ System Design</h2>
+    <div style="text-align: center; padding: 20px 0;">
+      <img src="/sd.png" alt="System Design Diagram" style="max-width: 100%; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.3); cursor: pointer;" onclick="openDiagram()">
+    </div>
+  </div>
+
+  <!-- Socket.io client -->
+  <script src="/socket.io/socket.io.js"></script>
+  
+  <script>
+    const API_BASE = '';  // Same origin
+    
+    // Connect to WebSocket
+    const socket = io();
+    
+    // Track connection status
+    socket.on('connect', () => {
+      console.log('🔴 Connected to live stream');
+      document.querySelector('.live-indicator').style.background = 'rgba(0, 255, 136, 0.2)';
+    });
+    
+    socket.on('disconnect', () => {
+      console.log('⚪ Disconnected from live stream');
+      document.querySelector('.live-indicator').style.background = 'rgba(255, 107, 107, 0.2)';
+    });
+
+    // Color palette for bubbles
+    const colors = [
+      'rgba(0, 217, 255, 0.7)',
+      'rgba(0, 255, 136, 0.7)',
+      'rgba(255, 107, 107, 0.7)',
+      'rgba(255, 193, 7, 0.7)',
+      'rgba(156, 39, 176, 0.7)',
+      'rgba(0, 150, 136, 0.7)',
+      'rgba(233, 30, 99, 0.7)',
+      'rgba(63, 81, 181, 0.7)',
+    ];
+
+    // Store for recent transfers (keep last 15)
+    let recentTransfers = [];
+    const MAX_TRANSFERS = 15;
+
+    // ========== REAL-TIME SOCKET HANDLERS ==========
+    
+    // Handle real-time stats updates
+    socket.on('stats', (stats) => {
+      document.getElementById('stat-holders').textContent = stats.session.uniqueHolders;
+      document.getElementById('stat-multi').textContent = stats.session.multiTransferTxs;
+      document.getElementById('stat-max').textContent = stats.session.maxTransfersInOneTx;
+      
+      // Flash animation on update
+      document.querySelectorAll('.stat-value').forEach(el => {
+        el.style.animation = 'none';
+        el.offsetHeight; // Trigger reflow
+        el.style.animation = 'flash 0.5s';
+      });
+    });
+
+    // Handle real-time holders updates
+    socket.on('holders', (holders) => {
+      renderBubbles(holders);
+    });
+
+    // Handle real-time grouped transaction
+    socket.on('groupedTx', (groupedTx) => {
+      // Add transfers to recent list
+      groupedTx.transfers.forEach(t => {
+        recentTransfers.unshift({
+          ...t,
+          txHash: groupedTx.txHash,
+          blockNumber: groupedTx.blockNumber,
+          isMultiTransfer: groupedTx.isMultiTransfer,
+        });
+      });
+      
+      // Keep only recent
+      recentTransfers = recentTransfers.slice(0, MAX_TRANSFERS);
+      
+      // Re-render transfers
+      renderTransfers();
+      
+      // Flash the transfers panel
+      document.querySelector('.transfers-panel').style.borderColor = '#00ff88';
+      setTimeout(() => {
+        document.querySelector('.transfers-panel').style.borderColor = 'transparent';
+      }, 300);
+    });
+
+    // ========== RENDER FUNCTIONS ==========
+
+    function renderBubbles(holders) {
+      if (!holders || holders.length === 0) return;
+      
+      const container = document.getElementById('bubbles');
+      const maxBalance = Math.max(...holders.map(h => parseFloat(h.balance)));
+      
+      container.innerHTML = holders.map((holder, i) => {
+        const balance = parseFloat(holder.balance);
+        const size = Math.max(60, Math.min(180, 60 + (balance / maxBalance) * 120));
+        const color = colors[i % colors.length];
+        const shortAddr = `${holder.address.slice(0, 6)}...${holder.address.slice(-4)}`;
+        const balanceFormatted = formatBalance(balance);
+        
+        return `
+          <div class="bubble" 
+               style="width: ${size}px; height: ${size}px; background: ${color};"
+               title="${holder.address}\n${balanceFormatted}">
+            <div class="bubble-address">${shortAddr}</div>
+            <div class="bubble-balance">${formatShortBalance(balanceFormatted)}</div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function renderTransfers() {
+      const container = document.getElementById('transfers');
+      
+      if (recentTransfers.length === 0) {
+        container.innerHTML = '<div class="loading">Waiting for transfers...</div>';
+        return;
+      }
+      
+      container.innerHTML = recentTransfers.map((t, index) => {
+        const shortFrom = `${t.from.slice(0, 8)}...${t.from.slice(-4)}`;
+        const shortTo = `${t.to.slice(0, 8)}...${t.to.slice(-4)}`;
+        const isNew = index === 0;
+        
+        return `
+          <div class="transfer ${t.isMultiTransfer ? 'multi' : ''} ${isNew ? 'new' : ''}">
+            <div class="transfer-addresses">
+              <span class="address">${shortFrom}</span>
+              <span class="transfer-arrow">→</span>
+              <span class="address">${shortTo}</span>
+            </div>
+            <div class="transfer-value">${formatBalance(parseFloat(t.value))}</div>
+            <div class="transfer-meta">
+              Block ${t.blockNumber} • Log #${t.logIndex}
+              ${t.isMultiTransfer ? ' • 🔗 Multi-TX' : ''}
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    // ========== HELPERS ==========
+
+    function formatBalance(value) {
+      const num = value / 1e18;
+      return num.toLocaleString(undefined, { maximumFractionDigits: 4 }) + ' WMON';
+    }
+
+    function formatShortBalance(balanceStr) {
+      const num = parseFloat(balanceStr.replace(/,/g, ''));
+      if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M';
+      if (num >= 1000) return (num / 1000).toFixed(1) + 'K';
+      return num.toFixed(1);
+    }
+
+    // ========== INITIAL LOAD ==========
+    
+    // Load initial data via API (one-time)
+    async function loadInitialData() {
+      try {
+        // Load stats
+        const statsRes = await fetch(`${API_BASE}/api/stats`);
+        const statsData = await statsRes.json();
+        if (statsData.success) {
+          document.getElementById('stat-holders').textContent = statsData.stats.session.uniqueHolders;
+          document.getElementById('stat-transfers').textContent = statsData.stats.database.totalTransfers.toLocaleString();
+          document.getElementById('stat-multi').textContent = statsData.stats.session.multiTransferTxs;
+          document.getElementById('stat-max').textContent = statsData.stats.session.maxTransfersInOneTx;
+        }
+
+        // Load holders
+        const holdersRes = await fetch(`${API_BASE}/api/holders?limit=20`);
+        const holdersData = await holdersRes.json();
+        if (holdersData.success) {
+          renderBubbles(holdersData.holders);
+        }
+
+        // Load recent transfers
+        const transfersRes = await fetch(`${API_BASE}/api/transfers?limit=15`);
+        const transfersData = await transfersRes.json();
+        if (transfersData.success) {
+          recentTransfers = transfersData.transfers.map(t => ({
+            from: t.from,
+            to: t.to,
+            value: t.value,
+            txHash: t.txHash,
+            logIndex: t.logIndex,
+            blockNumber: t.blockNumber,
+            isMultiTransfer: false,
+          }));
+          renderTransfers();
+        }
+      } catch (err) {
+        console.error('Failed to load initial data:', err);
+      }
+    }
+
+    loadInitialData();
+    
+    // Update DB count periodically (since it's not streamed)
+    setInterval(async () => {
+      try {
+        const res = await fetch(`${API_BASE}/api/stats`);
+        const data = await res.json();
+        if (data.success) {
+          document.getElementById('stat-transfers').textContent = data.stats.database.totalTransfers.toLocaleString();
+        }
+      } catch (err) {}
+    }, 10000);
+
+    // ========== SYSTEM DESIGN MODAL ==========
+    function openDiagram() {
+      document.getElementById('sdModal').classList.add('active');
+    }
+    
+    function closeDiagram() {
+      document.getElementById('sdModal').classList.remove('active');
+    }
+    
+    // Close modal on Escape key
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') closeDiagram();
+    });
+  </script>
+</body>
+</html>
