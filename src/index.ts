@@ -87,24 +87,32 @@ async function main() {
     flushPendingTransactions();
   });
 
-  // Print summary stats every 20 seconds
-  const statsInterval = setInterval(() => {
+  // Print summary stats every 60 seconds
+  setInterval(() => {
     printDashboard(dbConnected);
-  }, 20000);
+  }, 60000);
 
-  // Keep alive for 5 minutes
-  console.log('Running for 5 minutes... (Ctrl+C to stop)\n');
-  await new Promise(r => setTimeout(r, 5 * 60 * 1000));
+  // Handle provider errors - exit so Railway can restart
+  provider.on('error', (err) => {
+    console.error('❌ Provider error:', err);
+    process.exit(1);
+  });
 
-  clearInterval(statsInterval);
-  flushPendingTransactions(); // Flush any remaining
-  await provider.destroy();
+  // Keep alive forever (for production)
+  console.log('🟢 Running indefinitely... (Ctrl+C to stop)\n');
   
-  if (dbConnected) {
-    const finalCount = await getTransferCount();
-    console.log(`\n💾 Final DB count: ${finalCount} transfers`);
-  }
-  console.log('\n👋 Done');
+  // Graceful shutdown
+  process.on('SIGTERM', async () => {
+    console.log('\n📴 Shutting down gracefully...');
+    flushPendingTransactions();
+    await provider.destroy();
+    if (dbConnected) {
+      const finalCount = await getTransferCount();
+      console.log(`💾 Final DB count: ${finalCount} transfers`);
+    }
+    console.log('👋 Goodbye!');
+    process.exit(0);
+  });
 }
 
 /**
