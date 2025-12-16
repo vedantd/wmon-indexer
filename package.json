@@ -2,7 +2,9 @@
   "name": "kuru-event-indexer",
   "version": "0.1.0",
   "scripts": {
-    "start": "ts-node src/index.ts"
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "ts-node src/index.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.88.0",
