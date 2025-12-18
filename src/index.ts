@@ -38,6 +38,11 @@ async function main() {
   console.log('Demonstrates: Grouping multiple ERC-20 transfers by transaction');
   console.log('Now with Supabase persistence! 💾');
   console.log('');
+  
+  // Log the WSS URL (mask the API key for security)
+  const maskedUrl = WSS_URL.replace(/\/v2\/(.{6}).*$/, '/v2/$1...[MASKED]');
+  console.log(`🔗 RPC URL: ${maskedUrl}`);
+  console.log('');
 
   // Test database connection
   console.log('Testing Supabase connection...');
