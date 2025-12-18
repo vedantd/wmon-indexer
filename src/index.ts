@@ -19,10 +19,13 @@ let dbInsertErrors = 0;
 // Reconnection state
 let currentProvider: WebSocketProvider | null = null;
 let reconnectAttempts = 0;
+let disconnectCount = 0; // Track disconnects to apply backoff even after "successful" connects
+let lastStableConnection = 0; // Timestamp of last stable connection (>30s without error)
 let isReconnecting = false; // Prevent multiple simultaneous reconnection attempts
-const MAX_RECONNECT_ATTEMPTS = 10;
-const BASE_DELAY_MS = 5000; // Start with 5 seconds (more conservative)
+const MAX_RECONNECT_ATTEMPTS = 20;
+const BASE_DELAY_MS = 10000; // Start with 10 seconds
 const MAX_DELAY_MS = 5 * 60 * 1000; // Max 5 minutes between attempts
+const STABLE_CONNECTION_THRESHOLD = 30000; // Connection is "stable" after 30s without errors
 let dbConnected = false;
 
 // Entry point - keep this file thin!
@@ -143,6 +146,15 @@ async function connectWithRetry(): Promise<void> {
       // Reset reconnect counter on successful connection
       reconnectAttempts = 0;
       
+      // Set up a timer to mark connection as stable after threshold
+      setTimeout(() => {
+        if (currentProvider) {
+          lastStableConnection = Date.now();
+          disconnectCount = 0; // Reset disconnect count after stable period
+          console.log('✅ Connection stable for 30s, reset backoff counters');
+        }
+      }, STABLE_CONNECTION_THRESHOLD);
+      
       // Start listening to transfers
       startTransferListener(currentProvider);
       
@@ -215,6 +227,7 @@ async function handleDisconnect(): Promise<void> {
     return;
   }
   isReconnecting = true;
+  disconnectCount++;
   
   // Flush any pending data
   flushPendingTransactions();
@@ -229,10 +242,27 @@ async function handleDisconnect(): Promise<void> {
     currentProvider = null;
   }
   
-  console.log('\n🔄 Attempting to reconnect...\n');
+  // Calculate backoff based on how many times we've disconnected recently
+  // If connection wasn't stable (failed within 30s), apply exponential backoff
+  const timeSinceLastStable = Date.now() - lastStableConnection;
+  const wasUnstable = timeSinceLastStable < STABLE_CONNECTION_THRESHOLD;
   
-  // Small delay before reconnecting
-  await sleep(2000);
+  let delay: number;
+  if (wasUnstable) {
+    // Connection keeps failing quickly - apply aggressive backoff
+    delay = Math.min(BASE_DELAY_MS * Math.pow(2, disconnectCount - 1), MAX_DELAY_MS);
+    const jitter = Math.random() * 5000; // Add 0-5s jitter
+    delay += jitter;
+    console.log(`\n⚠️  Connection unstable (failed after ${Math.round(timeSinceLastStable / 1000)}s)`);
+    console.log(`⏳ Waiting ${Math.round(delay / 1000)}s before reconnect (attempt ${disconnectCount})...\n`);
+  } else {
+    // Connection was stable before failing - reset counter and use shorter delay
+    disconnectCount = 1;
+    delay = 5000; // 5 second delay for stable connections that dropped
+    console.log('\n🔄 Connection dropped after stable period, reconnecting in 5s...\n');
+  }
+  
+  await sleep(delay);
   
   // Try to reconnect
   try {
