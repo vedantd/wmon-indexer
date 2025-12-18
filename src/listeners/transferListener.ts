@@ -8,12 +8,19 @@ import { TransferEvent } from '../types';
 const recentTransfers: TransferEvent[] = [];
 const MAX_RECENT = 10;
 
+// Track if listener is active (for reconnection handling)
+let listenerCount = 0;
+
 /**
  * Starts listening to WMON Transfer events.
  * Decodes each event, updates balance tracker, and groups by transaction.
+ * Safe to call multiple times on reconnection.
  */
 export function startTransferListener(provider: WebSocketProvider): void {
-  console.log(`📡 Listening to WMON transfers at ${CONTRACTS.WMON}\n`);
+  listenerCount++;
+  const currentListener = listenerCount;
+  
+  console.log(`📡 Listening to WMON transfers at ${CONTRACTS.WMON} (session #${currentListener})\n`);
 
   // Create filter for Transfer events on WMON contract
   const filter = {
@@ -23,6 +30,11 @@ export function startTransferListener(provider: WebSocketProvider): void {
 
   // Subscribe to matching logs
   provider.on(filter, async (log: Log) => {
+    // Ignore events from old providers (after reconnection)
+    if (currentListener !== listenerCount) {
+      return;
+    }
+    
     try {
       const decoded = decodeTransferLog(log);
       

@@ -16,6 +16,14 @@ import { GroupedTransaction } from './types';
 let dbInsertCount = 0;
 let dbInsertErrors = 0;
 
+// Reconnection state
+let currentProvider: WebSocketProvider | null = null;
+let reconnectAttempts = 0;
+const MAX_RECONNECT_ATTEMPTS = 10;
+const BASE_DELAY_MS = 1000; // Start with 1 second
+const MAX_DELAY_MS = 5 * 60 * 1000; // Max 5 minutes between attempts
+let dbConnected = false;
+
 // Entry point - keep this file thin!
 // All heavy logic goes into listeners/ and trackers/
 
@@ -29,7 +37,7 @@ async function main() {
 
   // Test database connection
   console.log('Testing Supabase connection...');
-  const dbConnected = await testConnection();
+  dbConnected = await testConnection();
   if (dbConnected) {
     const existingCount = await getTransferCount();
     console.log(`✅ Database connected! (${existingCount} transfers in DB)`);
@@ -43,13 +51,7 @@ async function main() {
   startApiServer();
   console.log('');
 
-  console.log('Connecting to Monad via WebSocket...');
-  const provider = new WebSocketProvider(WSS_URL);
-  
-  await provider.ready;
-  console.log('✅ Connected!\n');
-
-  // Register callback for grouped transactions
+  // Register callback for grouped transactions (only once!)
   onGroupedTransaction(async (groupedTx) => {
     displayGroupedTransaction(groupedTx);
     
@@ -79,24 +81,13 @@ async function main() {
     }
   });
 
-  // Start listening to transfers
-  startTransferListener(provider);
-
-  // Flush pending transactions on each new block
-  provider.on('block', (blockNumber) => {
-    flushPendingTransactions();
-  });
+  // Connect with reconnection support
+  await connectWithRetry();
 
   // Print summary stats every 60 seconds
   setInterval(() => {
     printDashboard(dbConnected);
   }, 60000);
-
-  // Handle provider errors - exit so Railway can restart
-  provider.on('error', (err) => {
-    console.error('❌ Provider error:', err);
-    process.exit(1);
-  });
 
   // Keep alive forever (for production)
   console.log('🟢 Running indefinitely... (Ctrl+C to stop)\n');
@@ -105,7 +96,9 @@ async function main() {
   process.on('SIGTERM', async () => {
     console.log('\n📴 Shutting down gracefully...');
     flushPendingTransactions();
-    await provider.destroy();
+    if (currentProvider) {
+      await currentProvider.destroy();
+    }
     if (dbConnected) {
       const finalCount = await getTransferCount();
       console.log(`💾 Final DB count: ${finalCount} transfers`);
@@ -113,6 +106,119 @@ async function main() {
     console.log('👋 Goodbye!');
     process.exit(0);
   });
+}
+
+/**
+ * Connect to WebSocket with exponential backoff retry
+ */
+async function connectWithRetry(): Promise<void> {
+  while (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+    try {
+      console.log('Connecting to Monad via WebSocket...');
+      
+      // Create new provider
+      currentProvider = new WebSocketProvider(WSS_URL);
+      
+      // Wait for connection
+      await currentProvider.ready;
+      console.log('✅ Connected!\n');
+      
+      // Reset reconnect counter on successful connection
+      reconnectAttempts = 0;
+      
+      // Start listening to transfers
+      startTransferListener(currentProvider);
+      
+      // Flush pending transactions on each new block
+      currentProvider.on('block', () => {
+        flushPendingTransactions();
+      });
+      
+      // Handle provider errors - trigger reconnection
+      currentProvider.on('error', (err) => {
+        console.error('❌ Provider error:', err.message || err);
+        handleDisconnect();
+      });
+      
+      // Also listen for WebSocket close events
+      const wsSocket = (currentProvider as any)._websocket;
+      if (wsSocket) {
+        wsSocket.on('close', () => {
+          console.log('⚠️  WebSocket closed');
+          handleDisconnect();
+        });
+        wsSocket.on('error', (err: Error) => {
+          console.error('❌ WebSocket error:', err.message || err);
+          // Don't call handleDisconnect here, 'close' will follow
+        });
+      }
+      
+      return; // Successfully connected
+      
+    } catch (error: any) {
+      reconnectAttempts++;
+      
+      // Calculate delay with exponential backoff + jitter
+      const exponentialDelay = Math.min(
+        BASE_DELAY_MS * Math.pow(2, reconnectAttempts - 1),
+        MAX_DELAY_MS
+      );
+      const jitter = Math.random() * 1000; // Add 0-1s jitter
+      const delay = exponentialDelay + jitter;
+      
+      // Special handling for rate limiting (429)
+      const isRateLimited = error.message?.includes('429') || error.code === 429;
+      
+      if (isRateLimited) {
+        console.error(`⚠️  Rate limited (429). Waiting longer before retry...`);
+        // Wait extra time for rate limits
+        const rateLimitDelay = Math.min(delay * 2, MAX_DELAY_MS);
+        console.log(`⏳ Attempt ${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS}: Retrying in ${Math.round(rateLimitDelay / 1000)}s...`);
+        await sleep(rateLimitDelay);
+      } else {
+        console.error(`❌ Connection failed: ${error.message || error}`);
+        console.log(`⏳ Attempt ${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS}: Retrying in ${Math.round(delay / 1000)}s...`);
+        await sleep(delay);
+      }
+    }
+  }
+  
+  // Exhausted all retries
+  console.error(`💀 Failed to connect after ${MAX_RECONNECT_ATTEMPTS} attempts. Exiting...`);
+  process.exit(1);
+}
+
+/**
+ * Handle disconnection - cleanup and reconnect
+ */
+async function handleDisconnect(): Promise<void> {
+  // Flush any pending data
+  flushPendingTransactions();
+  
+  // Cleanup old provider
+  if (currentProvider) {
+    try {
+      await currentProvider.destroy();
+    } catch (e) {
+      // Ignore cleanup errors
+    }
+    currentProvider = null;
+  }
+  
+  console.log('\n🔄 Attempting to reconnect...\n');
+  
+  // Small delay before reconnecting
+  await sleep(2000);
+  
+  // Try to reconnect
+  connectWithRetry().catch((err) => {
+    console.error('Fatal reconnection error:', err);
+    process.exit(1);
+  });
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
 }
 
 /**
@@ -256,5 +362,19 @@ function formatBalance(value: bigint): string {
   return num.toLocaleString(undefined, { maximumFractionDigits: 2 });
 }
 
-main().catch(console.error);
+// Global error handlers to prevent crashes
+process.on('uncaughtException', (err) => {
+  console.error('❌ Uncaught Exception:', err.message || err);
+  // Don't exit - try to keep running
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('❌ Unhandled Rejection at:', promise, 'reason:', reason);
+  // Don't exit - try to keep running
+});
+
+main().catch((err) => {
+  console.error('Fatal error in main:', err);
+  process.exit(1);
+});
 
