@@ -19,8 +19,9 @@ let dbInsertErrors = 0;
 // Reconnection state
 let currentProvider: WebSocketProvider | null = null;
 let reconnectAttempts = 0;
+let isReconnecting = false; // Prevent multiple simultaneous reconnection attempts
 const MAX_RECONNECT_ATTEMPTS = 10;
-const BASE_DELAY_MS = 1000; // Start with 1 second
+const BASE_DELAY_MS = 5000; // Start with 5 seconds (more conservative)
 const MAX_DELAY_MS = 5 * 60 * 1000; // Max 5 minutes between attempts
 let dbConnected = false;
 
@@ -88,6 +89,22 @@ async function main() {
   setInterval(() => {
     printDashboard(dbConnected);
   }, 60000);
+
+  // Health check every 30 seconds - verify connection is alive
+  setInterval(async () => {
+    if (!currentProvider || isReconnecting) return;
+    
+    try {
+      // Try to get block number - if this fails, connection is dead
+      await Promise.race([
+        currentProvider.getBlockNumber(),
+        sleep(10000).then(() => { throw new Error('Health check timeout'); })
+      ]);
+    } catch (err: any) {
+      console.error('❌ Health check failed:', err.message || err);
+      handleDisconnect();
+    }
+  }, 30000);
 
   // Keep alive forever (for production)
   console.log('🟢 Running indefinitely... (Ctrl+C to stop)\n');
@@ -192,6 +209,13 @@ async function connectWithRetry(): Promise<void> {
  * Handle disconnection - cleanup and reconnect
  */
 async function handleDisconnect(): Promise<void> {
+  // Prevent multiple simultaneous reconnection attempts
+  if (isReconnecting) {
+    console.log('🔄 Reconnection already in progress, skipping...');
+    return;
+  }
+  isReconnecting = true;
+  
   // Flush any pending data
   flushPendingTransactions();
   
@@ -211,10 +235,14 @@ async function handleDisconnect(): Promise<void> {
   await sleep(2000);
   
   // Try to reconnect
-  connectWithRetry().catch((err) => {
+  try {
+    await connectWithRetry();
+  } catch (err) {
     console.error('Fatal reconnection error:', err);
     process.exit(1);
-  });
+  } finally {
+    isReconnecting = false;
+  }
 }
 
 function sleep(ms: number): Promise<void> {
@@ -362,15 +390,43 @@ function formatBalance(value: bigint): string {
   return num.toLocaleString(undefined, { maximumFractionDigits: 2 });
 }
 
-// Global error handlers to prevent crashes
+// Global error handlers to prevent crashes AND trigger reconnection
 process.on('uncaughtException', (err) => {
   console.error('❌ Uncaught Exception:', err.message || err);
-  // Don't exit - try to keep running
+  
+  // Check if this is a connection-related error that needs reconnection
+  const errorMsg = err.message || String(err);
+  const isConnectionError = 
+    errorMsg.includes('429') || 
+    errorMsg.includes('WebSocket') ||
+    errorMsg.includes('ECONNREFUSED') ||
+    errorMsg.includes('ETIMEDOUT') ||
+    errorMsg.includes('socket hang up') ||
+    errorMsg.includes('connection');
+  
+  if (isConnectionError) {
+    console.log('🔌 Connection error detected, triggering reconnection...');
+    handleDisconnect();
+  }
 });
 
-process.on('unhandledRejection', (reason, promise) => {
-  console.error('❌ Unhandled Rejection at:', promise, 'reason:', reason);
-  // Don't exit - try to keep running
+process.on('unhandledRejection', (reason: any, promise) => {
+  console.error('❌ Unhandled Rejection:', reason?.message || reason);
+  
+  // Check if this is a connection-related error
+  const errorMsg = reason?.message || String(reason);
+  const isConnectionError = 
+    errorMsg.includes('429') || 
+    errorMsg.includes('WebSocket') ||
+    errorMsg.includes('ECONNREFUSED') ||
+    errorMsg.includes('ETIMEDOUT') ||
+    errorMsg.includes('socket hang up') ||
+    errorMsg.includes('connection');
+  
+  if (isConnectionError) {
+    console.log('🔌 Connection error detected, triggering reconnection...');
+    handleDisconnect();
+  }
 });
 
 main().catch((err) => {
